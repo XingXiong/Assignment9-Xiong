@@ -1,0 +1,68 @@
+---
+title: "lm-v-rlm"
+author: "Xing Xiong"
+date: "2016Äê11ÔÂ27ÈÕ"
+output: html_document
+---
+
+
+3.
+First,we calculate the slope for each country using the linear regression model.
+Here we will use funtion map and function unnest.The latter one is to get the slope for each country as there are several same slopes in each row.
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(gapminder)
+library(tidyverse)
+library(tidyr)
+library(broom)
+library(MASS)
+gap_nested <- gapminder %>% mutate(log_gdpPercap = log10(gdpPercap)) %>%
+  group_by(continent, country) %>% nest()
+glimpse(gap_nested)
+```
+
+```{r}
+gap_lm <- function(df){
+  lm(lifeExp  ~ log_gdpPercap, data = df)
+  }
+gap_nested <- gap_nested %>% 
+  mutate(lm_fit = map(data, gap_lm))
+gap_nested <- gap_nested %>% 
+  mutate(slope = map(lm_fit, coef))
+lmslope <- unnest(gap_nested, slope)
+```
+
+
+Then compute the slope using rlm function and then combine these two kinds of slopes.
+
+```{r}
+gap_rlm <- function(df){
+  rlm(log_gdpPercap ~ lifeExp ,data = df)
+}
+
+gap_nested <- gap_nested %>% 
+  mutate(rlm_fit = map(data, gap_rlm))
+gap_nested <- gap_nested %>% 
+  mutate(slope2 = map(rlm_fit, coef))
+
+rlmslope <- unnest(gap_nested, slope2)
+slopes <- unnest(gap_nested, slope, slope2)
+```
+
+
+Then Produce a plot of the slope estimates from lm versus the slope estimates from rlm. 
+```{r}
+slopes %>% ggplot(aes(slope, slope2)) +geom_line(aes(group = country)) + geom_smooth(color = "red") + facet_wrap(~continent)
+```
+
+Combine unnested data with gapminder to plot per capita GDP versus life expectency.
+
+```{r}
+slopes <- slopes %>% mutate(diff = abs(slope-slope2))
+
+slopes <- filter(slopes,diff >= 0.01) 
+
+gapminder$gdpPercap <-log10(gapminder$gdpPercap)
+forplot<-left_join(gapminder, slopes)
+
+forplot%>%ggplot(aes(lifeExp, gdpPercap, colour = country)) + geom_point() + ggtitle("per capita GDP versus life expectency")
